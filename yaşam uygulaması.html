@@ -1,0 +1,1227 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gündelik Yaşam Dengesi Planlayıcısı</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Google Fonts (Plus Jakarta Sans) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- React ve Babel CDN'leri -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased">
+
+  <!-- React Uygulamasının Bağlanacağı Kök Element -->
+  <div id="root"></div>
+
+  <!-- React Bileşen Kodu -->
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    // Varsayılan görev listesi
+    const INITIAL_TASKS = [
+      { id: 't1', category: 'temizlik', text: 'Evi havalandır ve genel toz al', completed: false },
+      { id: 't2', category: 'temizlik', text: 'Mutfak tezgahını temizle ve dezenfekte et', completed: false },
+      { id: 't3', category: 'yemek', text: 'Günün ana yemek menüsünü planla', completed: false },
+      { id: 't4', category: 'yemek', text: 'Yemek sonrası mutfak düzenini sağla', completed: false },
+      { id: 't5', category: 'dikis', text: 'Eksik düğme ve sökükleri kontrol et', completed: false },
+    ];
+
+    // Günlük pratik yaşam tüyoları
+    const DAILY_TIPS = [
+      { category: 'temizlik', title: '15 Dakika Kuralı', content: 'Her gün sadece 15 dakikanızı hızlıca dağınıklık toplamaya ayırarak haftalık büyük temizlik yükünü %80 azaltabilirsiniz.' },
+      { category: 'yemek', title: 'Toplu Doğrama (Prep)', content: 'Hafta başında soğan, sarımsak ve sebzeleri doğrayıp saklama kaplarına koymak, günlük yemek yapma sürenizi yarı yarıya kısaltır.' },
+      { category: 'dikis', title: 'Doğru İğne Seçimi', content: 'Kumaşınıza uygun iğne kullanmak dikiş makinenizin ömrünü uzatır ve dikişlerin sökülmesini tamamen önler.' },
+      { category: 'temizlik', title: 'Yukarıdan Aşağıya', content: 'Toz alırken her zaman en üst raflardan başlayıp en son yerleri süpürün. Böylece yere düşen tozları tekrar temizlemek zorunda kalmazsınız.' },
+      { category: 'yemek', title: 'Tek Tencere Mucizesi', content: 'Haftada bir gün her şeyi tek tencerede pişirebileceğiniz tarifler seçerek bulaşık süresinden ciddi tasarruf sağlayın.' }
+    ];
+
+    function App() {
+      const [activeTab, setActiveTab] = useState('bugun');
+      const [setupCompleted, setSetupCompleted] = useState(false);
+      
+      // Kurulum Sihirbazı Durumları
+      const [houseSize, setHouseSize] = useState('orta'); // kucuk, orta, buyuk
+      const [familyMembers, setFamilyMembers] = useState('2-3'); // 1, 2-3, 4+
+      const [cookingStyle, setCookingStyle] = useState('orta'); // pratik, orta, detayli
+      const [sewingPurpose, setSewingPurpose] = useState('hobi'); // tamirat, hobi, profesyonel
+
+      // Hesaplanan Hedef Süreler (Dakika olarak)
+      const [targets, setTargets] = useState({
+        temizlik: 30,
+        yemek: 45,
+        dikis: 20
+      });
+
+      // Harcanan Zaman Durumu (Saniye cinsinden)
+      const [spentTime, setSpentTime] = useState({
+        temizlik: 0,
+        yemek: 0,
+        dikis: 0
+      });
+
+      // Aktif Kronometre Durumu
+      const [activeTimer, setActiveTimer] = useState(null); // 'temizlik', 'yemek', 'dikis' veya null
+
+      // Görev Listesi Durumu
+      const [tasks, setTasks] = useState(INITIAL_TASKS);
+      const [newTaskText, setNewTaskText] = useState('');
+      const [newTaskCategory, setNewTaskCategory] = useState('temizlik');
+
+      // Haftalık Geçmiş Analizi Verileri
+      const [weeklyHistory, setWeeklyHistory] = useState([
+        { gun: 'Pzt', temizlik: 25, yemek: 40, dikis: 15 },
+        { gun: 'Sal', temizlik: 35, yemek: 50, dikis: 0 },
+        { gun: 'Çar', temizlik: 20, yemek: 30, dikis: 30 },
+        { gun: 'Per', temizlik: 45, yemek: 60, dikis: 10 },
+        { gun: 'Cum', temizlik: 30, yemek: 45, dikis: 25 },
+        { gun: 'Cmt', temizlik: 60, yemek: 90, dikis: 45 },
+        { gun: 'Paz', temizlik: 15, yemek: 35, dikis: 50 },
+      ]);
+
+      // Sistem Bildirim Mesajı (Toast)
+      const [notification, setNotification] = useState(null);
+
+      const triggerNotification = (message) => {
+        setNotification(message);
+        setTimeout(() => {
+          setNotification(null);
+        }, 4000);
+      };
+
+      // Tercihler değiştikçe otomatik süre hedefi hesaplama
+      useEffect(() => {
+        let cleanMin = 20;
+        if (houseSize === 'orta') cleanMin = 40;
+        if (houseSize === 'buyuk') cleanMin = 60;
+        if (familyMembers === '2-3') cleanMin += 10;
+        if (familyMembers === '4+') cleanMin += 25;
+
+        let cookMin = 30;
+        if (cookingStyle === 'orta') cookMin = 50;
+        if (cookingStyle === 'detayli') cookMin = 80;
+        if (familyMembers === '4+') cookMin += 15;
+
+        let sewMin = 15;
+        if (sewingPurpose === 'hobi') sewMin = 35;
+        if (sewingPurpose === 'profesyonel') sewMin = 75;
+
+        setTargets({
+          temizlik: cleanMin,
+          yemek: cookMin,
+          dikis: sewMin
+        });
+      }, [houseSize, familyMembers, cookingStyle, sewingPurpose]);
+
+      // Canlı Sayaç Yönetimi
+      useEffect(() => {
+        let interval = null;
+        if (activeTimer) {
+          interval = setInterval(() => {
+            setSpentTime(prev => {
+              const updated = { ...prev, [activeTimer]: prev[activeTimer] + 1 };
+              const targetInSec = targets[activeTimer] * 60;
+              
+              if (updated[activeTimer] === targetInSec) {
+                triggerNotification(`🎉 Harika! Günlük ${activeTimer === 'temizlik' ? 'Temizlik' : activeTimer === 'yemek' ? 'Yemek' : 'Dikiş'} hedef sürenize ulaştınız!`);
+              }
+              return updated;
+            });
+          }, 1000);
+        } else {
+          clearInterval(interval);
+        }
+        return () => clearInterval(interval);
+      }, [activeTimer, targets]);
+
+      // Manuel süre ekleme/çıkarma
+      const adjustTime = (category, amountInMinutes) => {
+        setSpentTime(prev => {
+          const newTime = Math.max(0, prev[category] + (amountInMinutes * 60));
+          return { ...prev, [category]: newTime };
+        });
+        const categoryLabel = category === 'temizlik' ? 'Temizlik' : category === 'yemek' ? 'Yemek yapma' : 'Dikiş';
+        triggerNotification(`${categoryLabel} süresi manuel olarak güncellendi.`);
+      };
+
+      // Görev Tamamlama / Seçme
+      const handleToggleTask = (id) => {
+        setTasks(prev => prev.map(t => {
+          if (t.id === id) {
+            const nextState = !t.completed;
+            if (nextState) {
+              triggerNotification("📋 Görevi başarıyla tamamladınız! Harika gidiyorsunuz.");
+            }
+            return { ...t, completed: nextState };
+          }
+          return t;
+        }));
+      };
+
+      // Yeni görev ekleme
+      const handleAddTask = (e) => {
+        e.preventDefault();
+        if (!newTaskText.trim()) return;
+        const newTask = {
+          id: Date.now().toString(),
+          category: newTaskCategory,
+          text: newTaskText.trim(),
+          completed: false
+        };
+        setTasks(prev => [...prev, newTask]);
+        setNewTaskText('');
+        triggerNotification("➕ Yeni görev listenize başarıyla eklendi.");
+      };
+
+      // Görev silme
+      const handleDeleteTask = (id) => {
+        setTasks(prev => prev.filter(t => t.id !== id));
+        triggerNotification("🗑️ Görev listenizden kaldırıldı.");
+      };
+
+      // Bir kategorideki tüm işleri tamamla
+      const handleQuickCompleteCategory = (category) => {
+        setSpentTime(prev => ({
+          ...prev,
+          [category]: targets[category] * 60
+        }));
+        setTasks(prev => prev.map(t => t.category === category ? { ...t, completed: true } : t));
+        const categoryLabel = category === 'temizlik' ? 'Temizlik' : category === 'yemek' ? 'Yemek' : 'Dikiş';
+        triggerNotification(`🎯 Bugün için tüm ${categoryLabel} görevlerini tamamlanmış olarak kaydettiniz!`);
+      };
+
+      // Süre formatlayıcı (Saniyeyi Sa, Dk, Sn yapar)
+      const formatTime = (seconds) => {
+        const hrs = Math.floor(seconds / 3600);
+        const mins = Math.floor((seconds % 3600) / 60);
+        const secs = seconds % 60;
+        return `${hrs > 0 ? hrs + 'sa ' : ''}${mins}dk ${secs}sn`;
+      };
+
+      // Rastgele İpucu Seçici
+      const [currentTip, setCurrentTip] = useState(DAILY_TIPS[0]);
+      const rotateTip = () => {
+        const randomIndex = Math.floor(Math.random() * DAILY_TIPS.length);
+        setCurrentTip(DAILY_TIPS[randomIndex]);
+      };
+
+      return (
+        <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col selection:bg-indigo-500 selection:text-white">
+          
+          {/* Toast Bildirim Alanı */}
+          {notification && (
+            <div className="fixed top-5 right-5 z-50 bg-slate-900 text-white px-6 py-4 rounded-xl shadow-2xl flex items-center space-x-3 border border-indigo-500/30 animate-bounce">
+              <span className="text-xl">✨</span>
+              <p className="font-semibold text-sm md:text-base">{notification}</p>
+            </div>
+          )}
+
+          {/* Header / Üst Menü */}
+          <header className="sticky top-0 bg-white/95 border-b border-slate-200 z-40 backdrop-blur-md">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col lg:flex-row justify-between items-center gap-4">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-rose-500 flex items-center justify-center shadow-lg text-white font-black text-xl tracking-tight">
+                  D
+                </div>
+                <div>
+                  <h1 className="text-xl font-bold bg-gradient-to-r from-slate-900 to-indigo-950 bg-clip-text text-transparent">
+                    Günlük Yaşam Dengesi
+                  </h1>
+                  <p className="text-xs text-slate-500 font-medium">Temizlik • Yemek Yapımı • Dikiş & Tasarım Planlayıcısı</p>
+                </div>
+              </div>
+
+              {/* Navigasyon Tuşları */}
+              <div className="flex flex-wrap items-center justify-center gap-1.5 bg-slate-100 p-1.5 rounded-xl border border-slate-200">
+                <button
+                  onClick={() => setActiveTab('bugun')}
+                  className={`px-3 py-2 rounded-lg text-xs md:text-sm font-semibold transition-all duration-200 ${
+                    activeTab === 'bugun'
+                      ? 'bg-white text-indigo-600 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+                  }`}
+                >
+                  📊 Bugünün Dengesi
+                </button>
+                <button
+                  onClick={() => setActiveTab('gorevler')}
+                  className={`px-3 py-2 rounded-lg text-xs md:text-sm font-semibold transition-all duration-200 ${
+                    activeTab === 'gorevler'
+                      ? 'bg-white text-indigo-600 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+                  }`}
+                >
+                  📋 Görev Yönetimi ({tasks.filter(t => !t.completed).length})
+                </button>
+                <button
+                  onClick={() => setActiveTab('analiz')}
+                  className={`px-3 py-2 rounded-lg text-xs md:text-sm font-semibold transition-all duration-200 ${
+                    activeTab === 'analiz'
+                      ? 'bg-white text-indigo-600 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+                  }`}
+                >
+                  📈 Haftalık Analiz
+                </button>
+                <button
+                  onClick={() => setActiveTab('ayarlar')}
+                  className={`px-3 py-2 rounded-lg text-xs md:text-sm font-semibold transition-all duration-200 ${
+                    activeTab === 'ayarlar'
+                      ? 'bg-white text-indigo-600 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+                  }`}
+                >
+                  ⚙️ Süre Ayarları
+                </button>
+              </div>
+            </div>
+          </header>
+
+          {/* Ana Çalışma Alanı */}
+          <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            
+            {/* Kurulum Tamamlanmadıysa Gösterilen Banner */}
+            {!setupCompleted && (
+              <div className="mb-8 p-6 bg-gradient-to-r from-indigo-50 to-rose-50 border border-indigo-100 rounded-3xl relative overflow-hidden shadow-sm">
+                <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+                  <div className="max-w-2xl">
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-800 mb-3">
+                      Kişiselleştirme Sihirbazı
+                    </span>
+                    <h2 className="text-xl md:text-2xl font-bold text-slate-900">
+                      Size Özel Günlük Süreleri Hesaplayalım mı?
+                    </h2>
+                    <p className="mt-1 text-sm text-slate-600">
+                      Evinizin durumuna, yemek pişirme tarzınıza ve el işi hedeflerinize göre en ideal zaman dengesini otomatik hesaplayalım. Sadece 4 pratik soru!
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setActiveTab('ayarlar');
+                      triggerNotification("⚙️ Süre hesaplama sihirbazı açıldı.");
+                    }}
+                    className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-2xl transition duration-200 shadow-lg shadow-indigo-600/20 text-center whitespace-nowrap self-start md:self-center"
+                  >
+                    Hemen Süreleri Ayarla 🚀
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* SEKMELER - 1. Bugünün Dengesi (Dashboard) */}
+            {activeTab === 'bugun' && (
+              <div className="space-y-8">
+                
+                {/* Üçlü Ana Aktivite Kartları Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  
+                  {/* Kart 1: Temizlik */}
+                  <div className="bg-white rounded-3xl border border-slate-200 p-6 flex flex-col shadow-sm hover:shadow-md transition duration-200 relative overflow-hidden group">
+                    <div className="absolute top-0 left-0 w-full h-1.5 bg-emerald-500"></div>
+                    <div className="flex justify-between items-start mb-6">
+                      <div className="p-3 bg-emerald-50 rounded-2xl text-emerald-600 group-hover:scale-110 transition duration-200">
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/>
+                        </svg>
+                      </div>
+                      <span className="text-xs font-semibold px-2.5 py-1 bg-emerald-50 text-emerald-800 rounded-lg">
+                        Temizlik & Düzen
+                      </span>
+                    </div>
+
+                    <h3 className="text-lg font-bold text-slate-800">Temizlik Süresi</h3>
+                    <p className="text-xs text-slate-500 mt-1">Günlük Önerilen Süre: <strong>{targets.temizlik} dakika</strong></p>
+
+                    {/* İlerleme Çubuğu */}
+                    <div className="my-6">
+                      <div className="flex justify-between text-xs font-semibold mb-1">
+                        <span className="text-emerald-600">Tamamlanan: {formatTime(spentTime.temizlik)}</span>
+                        <span className="text-slate-400">Hedef: {targets.temizlik}dk</span>
+                      </div>
+                      <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden">
+                        <div 
+                          className="bg-emerald-500 h-full rounded-full transition-all duration-300"
+                          style={{ width: `${Math.min(100, (spentTime.temizlik / (targets.temizlik * 60)) * 100)}%` }}
+                        ></div>
+                      </div>
+                      <p className="text-right text-[10px] text-slate-400 mt-1">
+                        %{Math.min(100, Math.round((spentTime.temizlik / (targets.temizlik * 60)) * 100))} tamamlandı
+                      </p>
+                    </div>
+
+                    {/* Zamanlayıcı Kontrolleri */}
+                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 flex flex-col gap-3 mt-auto">
+                      <div className="text-center font-mono text-xl font-bold text-slate-700">
+                        {formatTime(spentTime.temizlik)}
+                      </div>
+                      <div className="grid grid-cols-1 gap-2">
+                        {activeTimer === 'temizlik' ? (
+                          <button
+                            onClick={() => setActiveTimer(null)}
+                            className="py-2.5 px-4 bg-amber-500 hover:bg-amber-600 text-white font-semibold rounded-xl text-sm flex items-center justify-center gap-2 transition"
+                          >
+                            ⏸️ Süreyi Duraklat
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setActiveTimer('temizlik');
+                              triggerNotification("⏱️ Temizlik zamanlayıcısı başlatıldı.");
+                            }}
+                            className="py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl text-sm flex items-center justify-center gap-2 transition shadow-sm"
+                          >
+                            ▶️ Süreyi Başlat
+                          </button>
+                        )}
+                      </div>
+                      
+                      {/* Hızlı Manuel Süre Ekleme */}
+                      <div className="flex justify-between items-center border-t border-slate-200 pt-2.5 text-xs text-slate-500">
+                        <span>Manuel Ekle:</span>
+                        <div className="flex gap-1.5">
+                          <button type="button" onClick={() => adjustTime('temizlik', 5)} className="px-2.5 py-1 bg-white border border-slate-200 rounded hover:bg-slate-50 transition font-medium">+5dk</button>
+                          <button type="button" onClick={() => adjustTime('temizlik', 15)} className="px-2.5 py-1 bg-white border border-slate-200 rounded hover:bg-slate-50 transition font-medium">+15dk</button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Hepsini Tamamladım Butonu */}
+                    <button
+                      onClick={() => handleQuickCompleteCategory('temizlik')}
+                      className="mt-4 w-full py-3 border border-dashed border-emerald-300 hover:border-emerald-500 text-emerald-600 hover:bg-emerald-50 font-bold rounded-2xl text-sm transition"
+                    >
+                      ✅ Hepsini Tamamladım
+                    </button>
+                  </div>
+
+                  {/* Kart 2: Yemek Hazırlığı */}
+                  <div className="bg-white rounded-3xl border border-slate-200 p-6 flex flex-col shadow-sm hover:shadow-md transition duration-200 relative overflow-hidden group">
+                    <div className="absolute top-0 left-0 w-full h-1.5 bg-rose-500"></div>
+                    <div className="flex justify-between items-start mb-6">
+                      <div className="p-3 bg-rose-50 rounded-2xl text-rose-600 group-hover:scale-110 transition duration-200">
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
+                        </svg>
+                      </div>
+                      <span className="text-xs font-semibold px-2.5 py-1 bg-rose-50 text-rose-800 rounded-lg">
+                        Mutfak & Yemek
+                      </span>
+                    </div>
+
+                    <h3 className="text-lg font-bold text-slate-800">Yemek Hazırlığı</h3>
+                    <p className="text-xs text-slate-500 mt-1">Günlük Önerilen Süre: <strong>{targets.yemek} dakika</strong></p>
+
+                    {/* İlerleme Çubuğu */}
+                    <div className="my-6">
+                      <div className="flex justify-between text-xs font-semibold mb-1">
+                        <span className="text-rose-600">Tamamlanan: {formatTime(spentTime.yemek)}</span>
+                        <span className="text-slate-400">Hedef: {targets.yemek}dk</span>
+                      </div>
+                      <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden">
+                        <div 
+                          className="bg-rose-500 h-full rounded-full transition-all duration-300"
+                          style={{ width: `${Math.min(100, (spentTime.yemek / (targets.yemek * 60)) * 100)}%` }}
+                        ></div>
+                      </div>
+                      <p className="text-right text-[10px] text-slate-400 mt-1">
+                        %{Math.min(100, Math.round((spentTime.yemek / (targets.yemek * 60)) * 100))} tamamlandı
+                      </p>
+                    </div>
+
+                    {/* Zamanlayıcı Kontrolleri */}
+                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 flex flex-col gap-3 mt-auto">
+                      <div className="text-center font-mono text-xl font-bold text-slate-700">
+                        {formatTime(spentTime.yemek)}
+                      </div>
+                      <div className="grid grid-cols-1 gap-2">
+                        {activeTimer === 'yemek' ? (
+                          <button
+                            onClick={() => setActiveTimer(null)}
+                            className="py-2.5 px-4 bg-amber-500 hover:bg-amber-600 text-white font-semibold rounded-xl text-sm flex items-center justify-center gap-2 transition"
+                          >
+                            ⏸️ Süreyi Duraklat
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setActiveTimer('yemek');
+                              triggerNotification("⏱️ Yemek hazırlığı zamanlayıcısı başlatıldı.");
+                            }}
+                            className="py-2.5 px-4 bg-rose-600 hover:bg-rose-700 text-white font-semibold rounded-xl text-sm flex items-center justify-center gap-2 transition shadow-sm"
+                          >
+                            ▶️ Süreyi Başlat
+                          </button>
+                        )}
+                      </div>
+                      
+                      {/* Hızlı Manuel Süre Ekleme */}
+                      <div className="flex justify-between items-center border-t border-slate-200 pt-2.5 text-xs text-slate-500">
+                        <span>Manuel Ekle:</span>
+                        <div className="flex gap-1.5">
+                          <button type="button" onClick={() => adjustTime('yemek', 5)} className="px-2.5 py-1 bg-white border border-slate-200 rounded hover:bg-slate-50 transition font-medium">+5dk</button>
+                          <button type="button" onClick={() => adjustTime('yemek', 15)} className="px-2.5 py-1 bg-white border border-slate-200 rounded hover:bg-slate-50 transition font-medium">+15dk</button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Hepsini Tamamladım Butonu */}
+                    <button
+                      onClick={() => handleQuickCompleteCategory('yemek')}
+                      className="mt-4 w-full py-3 border border-dashed border-rose-300 hover:border-rose-500 text-rose-600 hover:bg-rose-50 font-bold rounded-2xl text-sm transition"
+                    >
+                      ✅ Hepsini Tamamladım
+                    </button>
+                  </div>
+
+                  {/* Kart 3: Dikiş Dikme */}
+                  <div className="bg-white rounded-3xl border border-slate-200 p-6 flex flex-col shadow-sm hover:shadow-md transition duration-200 relative overflow-hidden group">
+                    <div className="absolute top-0 left-0 w-full h-1.5 bg-indigo-500"></div>
+                    <div className="flex justify-between items-start mb-6">
+                      <div className="p-3 bg-indigo-50 rounded-2xl text-indigo-600 group-hover:scale-110 transition duration-200">
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14.121 14.121L19 19m-7-7l7-7m-7 7l-2.879 2.879M12 12L9.121 9.121m0 5.758a3 3 0 10-4.243-4.243 3 3 0 004.243 4.243z"/>
+                        </svg>
+                      </div>
+                      <span className="text-xs font-semibold px-2.5 py-1 bg-indigo-50 text-indigo-800 rounded-lg">
+                        Üretim & El İşi
+                      </span>
+                    </div>
+
+                    <h3 className="text-lg font-bold text-slate-800">Dikiş / El Emeği</h3>
+                    <p className="text-xs text-slate-500 mt-1">Günlük Önerilen Süre: <strong>{targets.dikis} dakika</strong></p>
+
+                    {/* İlerleme Çubuğu */}
+                    <div className="my-6">
+                      <div className="flex justify-between text-xs font-semibold mb-1">
+                        <span className="text-indigo-600">Tamamlanan: {formatTime(spentTime.dikis)}</span>
+                        <span className="text-slate-400">Hedef: {targets.dikis}dk</span>
+                      </div>
+                      <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden">
+                        <div 
+                          className="bg-indigo-500 h-full rounded-full transition-all duration-300"
+                          style={{ width: `${Math.min(100, (spentTime.dikis / (targets.dikis * 60)) * 100)}%` }}
+                        ></div>
+                      </div>
+                      <p className="text-right text-[10px] text-slate-400 mt-1">
+                        %{Math.min(100, Math.round((spentTime.dikis / (targets.dikis * 60)) * 100))} tamamlandı
+                      </p>
+                    </div>
+
+                    {/* Zamanlayıcı Kontrolleri */}
+                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 flex flex-col gap-3 mt-auto">
+                      <div className="text-center font-mono text-xl font-bold text-slate-700">
+                        {formatTime(spentTime.dikis)}
+                      </div>
+                      <div className="grid grid-cols-1 gap-2">
+                        {activeTimer === 'dikis' ? (
+                          <button
+                            onClick={() => setActiveTimer(null)}
+                            className="py-2.5 px-4 bg-amber-500 hover:bg-amber-600 text-white font-semibold rounded-xl text-sm flex items-center justify-center gap-2 transition"
+                          >
+                            ⏸️ Süreyi Duraklat
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setActiveTimer('dikis');
+                              triggerNotification("⏱️ Dikiş zamanlayıcısı başlatıldı.");
+                            }}
+                            className="py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-sm flex items-center justify-center gap-2 transition shadow-sm"
+                          >
+                            ▶️ Süreyi Başlat
+                          </button>
+                        )}
+                      </div>
+                      
+                      {/* Hızlı Manuel Süre Ekleme */}
+                      <div className="flex justify-between items-center border-t border-slate-200 pt-2.5 text-xs text-slate-500">
+                        <span>Manuel Ekle:</span>
+                        <div className="flex gap-1.5">
+                          <button type="button" onClick={() => adjustTime('dikis', 5)} className="px-2.5 py-1 bg-white border border-slate-200 rounded hover:bg-slate-50 transition font-medium">+5dk</button>
+                          <button type="button" onClick={() => adjustTime('dikis', 15)} className="px-2.5 py-1 bg-white border border-slate-200 rounded hover:bg-slate-50 transition font-medium">+15dk</button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Hepsini Tamamladım Butonu */}
+                    <button
+                      onClick={() => handleQuickCompleteCategory('dikis')}
+                      className="mt-4 w-full py-3 border border-dashed border-indigo-300 hover:border-indigo-500 text-indigo-600 hover:bg-indigo-50 font-bold rounded-2xl text-sm transition"
+                    >
+                      ✅ Hepsini Tamamladım
+                    </button>
+                  </div>
+
+                </div>
+
+                {/* Alt Bilgi Panelleri (Görev Önizleme & Günün Tüyosu) */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  
+                  {/* Günlük Hızlı Görev Listesi */}
+                  <div className="lg:col-span-2 bg-white rounded-3xl border border-slate-200 p-6 shadow-sm">
+                    <div className="flex justify-between items-center mb-6">
+                      <div>
+                        <h3 className="text-lg font-bold text-slate-900">Yapılacak Pratik Rutinler</h3>
+                        <p className="text-xs text-slate-500">Gününüzü kolaylaştıracak, tamamlamanız gereken işleriniz</p>
+                      </div>
+                      <button
+                        onClick={() => setActiveTab('gorevler')}
+                        className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+                      >
+                        Tümünü Yönet ➜
+                      </button>
+                    </div>
+
+                    <div className="space-y-3">
+                      {tasks.length === 0 ? (
+                        <div className="text-center py-8 text-slate-400 text-sm">
+                          Kutlarız! Bugün yapacak herhangi bir göreviniz kalmadı.
+                        </div>
+                      ) : (
+                        tasks.map((task) => (
+                          <div 
+                            key={task.id} 
+                            onClick={() => handleToggleTask(task.id)}
+                            className={`flex items-center justify-between p-3.5 rounded-2xl border transition duration-150 cursor-pointer ${
+                              task.completed 
+                                ? 'bg-slate-50/70 border-slate-200 text-slate-400' 
+                                : 'bg-white border-slate-200 hover:border-indigo-200 hover:bg-indigo-50/10'
+                            }`}
+                          >
+                            <div className="flex items-center space-x-3.5">
+                              <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
+                                task.completed 
+                                  ? 'border-indigo-500 bg-indigo-500 text-white' 
+                                  : 'border-slate-300'
+                              }`}>
+                                {task.completed && (
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3.5" d="M5 13l4 4L19 7" />
+                                  </svg>
+                                )}
+                              </div>
+                              <span className={`text-sm font-medium ${task.completed ? 'line-through' : 'text-slate-800'}`}>
+                                {task.text}
+                              </span>
+                            </div>
+                            
+                            <span className={`text-[10px] uppercase font-bold px-2.5 py-0.5 rounded-full ${
+                              task.category === 'temizlik' ? 'bg-emerald-50 text-emerald-700' :
+                              task.category === 'yemek' ? 'bg-rose-50 text-rose-700' :
+                              'bg-indigo-50 text-indigo-700'
+                            }`}>
+                              {task.category === 'temizlik' ? 'Temizlik' : task.category === 'yemek' ? 'Yemek' : 'Dikiş'}
+                            </span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Günün İlham Verici Tüyosu */}
+                  <div className="bg-gradient-to-b from-indigo-900 to-slate-900 rounded-3xl p-6 text-white shadow-lg flex flex-col justify-between relative overflow-hidden">
+                    <div>
+                      <div className="flex justify-between items-center mb-6">
+                        <span className="text-xs font-bold tracking-widest uppercase text-indigo-300">
+                          🎯 GÜNÜN PRATİK TÜYOSU
+                        </span>
+                        <button 
+                          onClick={rotateTip}
+                          className="text-xs font-semibold bg-white/10 hover:bg-white/20 text-white px-2.5 py-1 rounded-lg transition"
+                        >
+                          Başka İpucu ⚡
+                        </button>
+                      </div>
+
+                      <span className={`inline-block text-[10px] font-bold px-2.5 py-1 rounded-full mb-3 uppercase ${
+                        currentTip.category === 'temizlik' ? 'bg-emerald-500/20 text-emerald-300' :
+                        currentTip.category === 'yemek' ? 'bg-rose-500/20 text-rose-300' :
+                        'bg-indigo-500/20 text-indigo-300'
+                      }`}>
+                        {currentTip.category === 'temizlik' ? 'Temizlik & Düzen' : currentTip.category === 'yemek' ? 'Yemek & Mutfak' : 'Dikiş & El Emeği'}
+                      </span>
+
+                      <h4 className="text-lg font-bold mb-2 text-slate-100">{currentTip.title}</h4>
+                      <p className="text-slate-300 text-sm leading-relaxed font-light">
+                        "{currentTip.content}"
+                      </p>
+                    </div>
+
+                    <div className="mt-8 border-t border-slate-700/50 pt-4 flex items-center justify-between text-xs text-indigo-200">
+                      <span>Dengeyi koru, hayatı kolaylaştır.</span>
+                      <span className="font-semibold">🌟</span>
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+            )}
+
+            {/* SEKMELER - 2. Görev Yönetimi (Detaylı Liste) */}
+            {activeTab === 'gorevler' && (
+              <div className="bg-white rounded-3xl border border-slate-200 p-6 md:p-8 shadow-sm">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+                  <div>
+                    <h2 className="text-2xl font-bold text-slate-900">Görev Listem</h2>
+                    <p className="text-sm text-slate-500">Rutin görevlerinizi ekleyin, tamamladıkça sol kısımdan işaretleyip takip edin.</p>
+                  </div>
+                  
+                  <div className="flex gap-2">
+                    <span className="px-3 py-1.5 bg-slate-100 rounded-xl text-xs font-semibold text-slate-600">
+                      Toplam: {tasks.length}
+                    </span>
+                    <span className="px-3 py-1.5 bg-indigo-50 rounded-xl text-xs font-semibold text-indigo-700">
+                      Tamamlanan: {tasks.filter(t => t.completed).length}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Görev Ekleme Formu */}
+                <form onSubmit={handleAddTask} className="grid grid-cols-1 md:grid-cols-12 gap-3 mb-8 bg-slate-50 p-4 rounded-2xl border border-slate-200/50">
+                  <div className="md:col-span-6">
+                    <label className="block text-xs font-semibold text-slate-500 mb-1">Yeni Görev Tanımı</label>
+                    <input
+                      type="text"
+                      placeholder="Örn: Salondaki kitaplığı düzenle, Akşam çorbasını hazırla..."
+                      value={newTaskText}
+                      onChange={(e) => setNewTaskText(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div className="md:col-span-3">
+                    <label className="block text-xs font-semibold text-slate-500 mb-1">Kategori</label>
+                    <select
+                      value={newTaskCategory}
+                      onChange={(e) => setNewTaskCategory(e.target.value)}
+                      className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                    >
+                      <option value="temizlik">🧼 Temizlik & Düzen</option>
+                      <option value="yemek">🍳 Yemek Hazırlığı</option>
+                      <option value="dikis">🪡 Dikiş & Üretim</option>
+                    </select>
+                  </div>
+
+                  <div className="md:col-span-3 flex items-end">
+                    <button
+                      type="submit"
+                      className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-sm transition shadow-md shadow-indigo-600/15"
+                    >
+                      ➕ Listeye Ekle
+                    </button>
+                  </div>
+                </form>
+
+                {/* Kategori Bazında Dağıtılmış Görev Panoları */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  
+                  {/* Temizlik Kartları */}
+                  <div className="bg-slate-50/50 p-5 rounded-2xl border border-slate-100">
+                    <div className="flex items-center space-x-2 pb-4 mb-4 border-b border-slate-200">
+                      <div className="w-2.5 h-2.5 rounded-full bg-emerald-500"></div>
+                      <h3 className="font-bold text-slate-800 text-sm md:text-base">🧼 Temizlik & Düzen</h3>
+                    </div>
+                    <div className="space-y-3">
+                      {tasks.filter(t => t.category === 'temizlik').length === 0 ? (
+                        <p className="text-xs text-slate-400 py-4 text-center">Bu kategoriye ait görev yok.</p>
+                      ) : (
+                        tasks.filter(t => t.category === 'temizlik').map(task => (
+                          <div key={task.id} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-xl hover:border-indigo-100 transition shadow-sm">
+                            <div className="flex items-center space-x-2.5 flex-1 min-w-0" onClick={() => handleToggleTask(task.id)}>
+                              <div className={`w-4 h-4 rounded-full border flex items-center justify-center cursor-pointer transition-all ${
+                                task.completed ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-slate-300'
+                              }`}>
+                                {task.completed && <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="4" d="M5 13l4 4L19 7"/></svg>}
+                              </div>
+                              <span className={`text-xs font-medium truncate cursor-pointer ${task.completed ? 'line-through text-slate-400' : 'text-slate-700'}`}>
+                                {task.text}
+                              </span>
+                            </div>
+                            <button type="button" onClick={() => handleDeleteTask(task.id)} className="text-slate-300 hover:text-rose-500 p-1 ml-2 transition">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Yemek Kartları */}
+                  <div className="bg-slate-50/50 p-5 rounded-2xl border border-slate-100">
+                    <div className="flex items-center space-x-2 pb-4 mb-4 border-b border-slate-200">
+                      <div className="w-2.5 h-2.5 rounded-full bg-rose-500"></div>
+                      <h3 className="font-bold text-slate-800 text-sm md:text-base">🍲 Yemek Hazırlığı</h3>
+                    </div>
+                    <div className="space-y-3">
+                      {tasks.filter(t => t.category === 'yemek').length === 0 ? (
+                        <p className="text-xs text-slate-400 py-4 text-center">Bu kategoriye ait görev yok.</p>
+                      ) : (
+                        tasks.filter(t => t.category === 'yemek').map(task => (
+                          <div key={task.id} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-xl hover:border-indigo-100 transition shadow-sm">
+                            <div className="flex items-center space-x-2.5 flex-1 min-w-0" onClick={() => handleToggleTask(task.id)}>
+                              <div className={`w-4 h-4 rounded-full border flex items-center justify-center cursor-pointer transition-all ${
+                                task.completed ? 'border-rose-500 bg-rose-500 text-white' : 'border-slate-300'
+                              }`}>
+                                {task.completed && <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="4" d="M5 13l4 4L19 7"/></svg>}
+                              </div>
+                              <span className={`text-xs font-medium truncate cursor-pointer ${task.completed ? 'line-through text-slate-400' : 'text-slate-700'}`}>
+                                {task.text}
+                              </span>
+                            </div>
+                            <button type="button" onClick={() => handleDeleteTask(task.id)} className="text-slate-300 hover:text-rose-500 p-1 ml-2 transition">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Dikiş Kartları */}
+                  <div className="bg-slate-50/50 p-5 rounded-2xl border border-slate-100">
+                    <div className="flex items-center space-x-2 pb-4 mb-4 border-b border-slate-200">
+                      <div className="w-2.5 h-2.5 rounded-full bg-indigo-500"></div>
+                      <h3 className="font-bold text-slate-800 text-sm md:text-base">🪡 Dikiş & Tasarım</h3>
+                    </div>
+                    <div className="space-y-3">
+                      {tasks.filter(t => t.category === 'dikis').length === 0 ? (
+                        <p className="text-xs text-slate-400 py-4 text-center">Bu kategoriye ait görev yok.</p>
+                      ) : (
+                        tasks.filter(t => t.category === 'dikis').map(task => (
+                          <div key={task.id} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-xl hover:border-indigo-100 transition shadow-sm">
+                            <div className="flex items-center space-x-2.5 flex-1 min-w-0" onClick={() => handleToggleTask(task.id)}>
+                              <div className={`w-4 h-4 rounded-full border flex items-center justify-center cursor-pointer transition-all ${
+                                task.completed ? 'border-indigo-500 bg-indigo-500 text-white' : 'border-slate-300'
+                              }`}>
+                                {task.completed && <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="4" d="M5 13l4 4L19 7"/></svg>}
+                              </div>
+                              <span className={`text-xs font-medium truncate cursor-pointer ${task.completed ? 'line-through text-slate-400' : 'text-slate-700'}`}>
+                                {task.text}
+                              </span>
+                            </div>
+                            <button type="button" onClick={() => handleDeleteTask(task.id)} className="text-slate-300 hover:text-rose-500 p-1 ml-2 transition">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+            )}
+
+            {/* SEKMELER - 3. Analiz & İstatistik Paneli */}
+            {activeTab === 'analiz' && (
+              <div className="bg-white rounded-3xl border border-slate-200 p-6 md:p-8 shadow-sm">
+                <div className="mb-8">
+                  <h2 className="text-2xl font-bold text-slate-900">Zaman Dengesi Analizi</h2>
+                  <p className="text-sm text-slate-500">Son 7 günde hedeflerinize uyum grafiğiniz ve toplam aktivite dağılımınız.</p>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                  
+                  {/* Özel SVG ile Hazırlanmış Haftalık İlerleme Grafiği */}
+                  <div className="lg:col-span-2 bg-slate-50 p-6 rounded-2xl border border-slate-100 flex flex-col justify-between">
+                    <div>
+                      <h3 className="font-bold text-slate-800 text-base mb-1">Haftalık Dağılım</h3>
+                      <p className="text-xs text-slate-500 mb-6">Her bir günde harcanan toplam sürelerin (dakika) karşılaştırılması</p>
+                    </div>
+
+                    {/* SVG Görsel Grafik */}
+                    <div className="relative h-64 flex items-end justify-between pt-4 px-2">
+                      {/* Grafik Kılavuz Çizgileri */}
+                      <div className="absolute inset-0 flex flex-col justify-between pointer-events-none text-[10px] text-slate-400 pt-4">
+                        <div className="border-b border-dashed border-slate-200 w-full text-right pr-2">200 dk</div>
+                        <div className="border-b border-dashed border-slate-200 w-full text-right pr-2">150 dk</div>
+                        <div className="border-b border-dashed border-slate-200 w-full text-right pr-2">100 dk</div>
+                        <div className="border-b border-dashed border-slate-200 w-full text-right pr-2">50 dk</div>
+                        <div className="w-full h-0 text-right pr-2">0 dk</div>
+                      </div>
+
+                      {weeklyHistory.map((item, idx) => {
+                        const total = item.temizlik + item.yemek + item.dikis;
+                        // Max yükseklik referansı: 200 dakika
+                        const cleanHeight = (item.temizlik / 200) * 100;
+                        const cookHeight = (item.yemek / 200) * 100;
+                        const sewHeight = (item.dikis / 200) * 100;
+
+                        return (
+                          <div key={idx} className="flex flex-col items-center flex-1 z-10 group cursor-pointer">
+                            <div className="w-8 sm:w-12 flex flex-col justify-end h-48 rounded-md overflow-hidden relative bg-slate-200/50">
+                              <div 
+                                style={{ height: `${cleanHeight}%` }} 
+                                className="bg-emerald-500 hover:opacity-90 transition-all" 
+                                title={`Temizlik: ${item.temizlik}dk`}
+                              ></div>
+                              <div 
+                                style={{ height: `${cookHeight}%` }} 
+                                className="bg-rose-500 hover:opacity-90 transition-all" 
+                                title={`Yemek: ${item.yemek}dk`}
+                              ></div>
+                              <div 
+                                style={{ height: `${sewHeight}%` }} 
+                                className="bg-indigo-500 hover:opacity-90 transition-all" 
+                                title={`Dikiş: ${item.dikis}dk`}
+                              ></div>
+                            </div>
+                            <span className="text-xs font-bold text-slate-600 mt-2">{item.gun}</span>
+                            <span className="text-[10px] text-slate-400 font-medium">{total}dk</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="flex justify-center items-center gap-6 mt-6 pt-4 border-t border-slate-200 text-xs">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-3 h-3 rounded bg-emerald-500"></span>
+                        <span className="text-slate-600">Temizlik</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-3 h-3 rounded bg-rose-500"></span>
+                        <span className="text-slate-600">Yemek Hazırlığı</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-3 h-3 rounded bg-indigo-500"></span>
+                        <span className="text-slate-600">Dikiş & El Emeği</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Uyum Oranları ve Rozetler */}
+                  <div className="space-y-6">
+                    
+                    {/* Uyum Paneli */}
+                    <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100">
+                      <h3 className="font-bold text-slate-800 text-sm mb-1">Denge Oranınız</h3>
+                      <p className="text-xs text-slate-500 mb-4">Aktivitelerinizin haftalık dengeli dağılım analizi</p>
+                      
+                      <div className="space-y-4">
+                        <div>
+                          <div className="flex justify-between text-xs font-semibold mb-1">
+                            <span className="text-emerald-700">Temizlik Düzeni</span>
+                            <span>Dengeli (%85)</span>
+                          </div>
+                          <div className="w-full bg-slate-200 rounded-full h-2">
+                            <div className="bg-emerald-500 h-2 rounded-full" style={{ width: '85%' }}></div>
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className="flex justify-between text-xs font-semibold mb-1">
+                            <span className="text-rose-700">Beslenme & Yemek</span>
+                            <span>Mükemmel (%95)</span>
+                          </div>
+                          <div className="w-full bg-slate-200 rounded-full h-2">
+                            <div className="bg-rose-500 h-2 rounded-full" style={{ width: '95%' }}></div>
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className="flex justify-between text-xs font-semibold mb-1">
+                            <span className="text-indigo-700">Dikiş & Hobi Üretimi</span>
+                            <span>Geliştirilebilir (%45)</span>
+                          </div>
+                          <div className="w-full bg-slate-200 rounded-full h-2">
+                            <div className="bg-indigo-400 h-2 rounded-full" style={{ width: '45%' }}></div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Rozet Kartı */}
+                    <div className="bg-gradient-to-r from-indigo-50 to-purple-50 p-6 rounded-2xl border border-indigo-100">
+                      <h3 className="font-bold text-indigo-900 text-sm mb-1">🏆 Haftalık Başarı Rozetiniz</h3>
+                      <p className="text-xs text-slate-500 mb-4">Aktivite yaptıkça kazandığınız ünvanlar</p>
+
+                      <div className="flex items-center space-x-4">
+                        <div className="w-14 h-14 bg-indigo-600 text-white rounded-2xl flex items-center justify-center text-2xl font-black shadow-lg shadow-indigo-600/25">
+                          🎖️
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-bold text-indigo-950">"Dengeli Yaşam Ustası"</h4>
+                          <p className="text-xs text-slate-600 mt-0.5">3 gün üst üste hedeflere ulaştınız!</p>
+                        </div>
+                      </div>
+                    </div>
+
+                  </div>
+
+                </div>
+              </div>
+            )}
+
+            {/* SEKMELER - 4. Akıllı Süre Hesaplama Sihirbazı */}
+            {activeTab === 'ayarlar' && (
+              <div className="bg-white rounded-3xl border border-slate-200 p-6 md:p-8 shadow-sm max-w-3xl mx-auto">
+                <div className="mb-8">
+                  <h2 className="text-2xl font-bold text-slate-900">Süre Hesaplama Sihirbazı</h2>
+                  <p className="text-sm text-slate-500">Yaşam tarzınızı belirleyen aşağıdaki soruları yanıtlayarak size en uygun süre dengesini oluşturun.</p>
+                </div>
+
+                <div className="space-y-6">
+                  
+                  {/* Soru 1 */}
+                  <div className="space-y-2">
+                    <label className="block text-sm font-bold text-slate-700">1. Evinizin büyüklüğü nedir?</label>
+                    <div className="grid grid-cols-3 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setHouseSize('kucuk')}
+                        className={`p-3.5 rounded-xl text-xs md:text-sm font-semibold border-2 transition text-center ${
+                          houseSize === 'kucuk'
+                            ? 'bg-indigo-50 border-indigo-600 text-indigo-700'
+                            : 'bg-white border-slate-200 hover:border-slate-300 text-slate-600'
+                        }`}
+                      >
+                        🏡 Küçük / 1+1 Daire
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setHouseSize('orta')}
+                        className={`p-3.5 rounded-xl text-xs md:text-sm font-semibold border-2 transition text-center ${
+                          houseSize === 'orta'
+                            ? 'bg-indigo-50 border-indigo-600 text-indigo-700'
+                            : 'bg-white border-slate-200 hover:border-slate-300 text-slate-600'
+                        }`}
+                      >
+                        🏢 Orta / 2+1 veya 3+1
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setHouseSize('buyuk')}
+                        className={`p-3.5 rounded-xl text-xs md:text-sm font-semibold border-2 transition text-center ${
+                          houseSize === 'buyuk'
+                            ? 'bg-indigo-50 border-indigo-600 text-indigo-700'
+                            : 'bg-white border-slate-200 hover:border-slate-300 text-slate-600'
+                        }`}
+                      >
+                        🏰 Büyük / Müstakil veya Villa
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Soru 2 */}
+                  <div className="space-y-2">
+                    <label className="block text-sm font-bold text-slate-700">2. Evde kaç kişi yaşıyor?</label>
+                    <div className="grid grid-cols-3 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setFamilyMembers('1')}
+                        className={`p-3.5 rounded-xl text-xs md:text-sm font-semibold border-2 transition text-center ${
+                          familyMembers === '1'
+                            ? 'bg-indigo-50 border-indigo-600 text-indigo-700'
+                            : 'bg-white border-slate-200 hover:border-slate-300 text-slate-600'
+                        }`}
+                      >
+                        👤 Tek Başıma
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFamilyMembers('2-3')}
+                        className={`p-3.5 rounded-xl text-xs md:text-sm font-semibold border-2 transition text-center ${
+                          familyMembers === '2-3'
+                            ? 'bg-indigo-50 border-indigo-600 text-indigo-700'
+                            : 'bg-white border-slate-200 hover:border-slate-300 text-slate-600'
+                        }`}
+                      >
+                        👥 2 - 3 Kişi
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFamilyMembers('4+')}
+                        className={`p-3.5 rounded-xl text-xs md:text-sm font-semibold border-2 transition text-center ${
+                          familyMembers === '4+'
+                            ? 'bg-indigo-50 border-indigo-600 text-indigo-700'
+                            : 'bg-white border-slate-200 hover:border-slate-300 text-slate-600'
+                        }`}
+                      >
+                        👨‍👩‍👧‍👦 4 veya Daha Fazla
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Soru 3 */}
+                  <div className="space-y-2">
+                    <label className="block text-sm font-bold text-slate-700">3. Yemek pişirme rutininiz nasıl?</label>
+                    <div className="grid grid-cols-3 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setCookingStyle('pratik')}
+                        className={`p-3.5 rounded-xl text-xs md:text-sm font-semibold border-2 transition text-center ${
+                          cookingStyle === 'pratik'
+                            ? 'bg-indigo-50 border-indigo-600 text-indigo-700'
+                            : 'bg-white border-slate-200 hover:border-slate-300 text-slate-600'
+                        }`}
+                      >
+                        ⏱️ Pratik & Hızlı Tarifler
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCookingStyle('orta')}
+                        className={`p-3.5 rounded-xl text-xs md:text-sm font-semibold border-2 transition text-center ${
+                          cookingStyle === 'orta'
+                            ? 'bg-indigo-50 border-indigo-600 text-indigo-700'
+                            : 'bg-white border-slate-200 hover:border-slate-300 text-slate-600'
+                        }`}
+                      >
+                        🍲 Her Gün Taze Ev Yemeği
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCookingStyle('detayli')}
+                        className={`p-3.5 rounded-xl text-xs md:text-sm font-semibold border-2 transition text-center ${
+                          cookingStyle === 'detayli'
+                            ? 'bg-indigo-50 border-indigo-600 text-indigo-700'
+                            : 'bg-white border-slate-200 hover:border-slate-300 text-slate-600'
+                        }`}
+                      >
+                        🧑‍🍳 Gurme / Çok Çeşitli Yemekler
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Soru 4 */}
+                  <div className="space-y-2">
+                    <label className="block text-sm font-bold text-slate-700">4. Dikiş / El emeği üretim düzeyiniz nedir?</label>
+                    <div className="grid grid-cols-3 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setSewingPurpose('tamirat')}
+                        className={`p-3.5 rounded-xl text-xs md:text-sm font-semibold border-2 transition text-center ${
+                          sewingPurpose === 'tamirat'
+                            ? 'bg-indigo-50 border-indigo-600 text-indigo-700'
+                            : 'bg-white border-slate-200 hover:border-slate-300 text-slate-600'
+                        }`}
+                      >
+                        🪡 Sadece Sökük & Tadilatlar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSewingPurpose('hobi')}
+                        className={`p-3.5 rounded-xl text-xs md:text-sm font-semibold border-2 transition text-center ${
+                          sewingPurpose === 'hobi'
+                        ? 'bg-indigo-50 border-indigo-600 text-indigo-700'
+                        : 'bg-white border-slate-200 hover:border-slate-300 text-slate-600'
+                    }`}
+                  >
+                    🎨 Hobi Amaçlı Üretim & Tasarım
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSewingPurpose('profesyonel')}
+                    className={`p-3.5 rounded-xl text-xs md:text-sm font-semibold border-2 transition text-center ${
+                      sewingPurpose === 'profesyonel'
+                        ? 'bg-indigo-50 border-indigo-600 text-indigo-700'
+                        : 'bg-white border-slate-200 hover:border-slate-300 text-slate-600'
+                    }`}
+                  >
+                    🧥 Profesyonel Tasarım & Terzilik
+                  </button>
+                </div>
+              </div>
+
+              {/* Sonuç Alanı */}
+              <div className="mt-8 bg-slate-50 border border-slate-200 rounded-3xl p-6">
+                <h3 className="font-bold text-slate-900 text-base mb-4">✨ Hesaplanan Önerilen Günlük Süreleriniz</h3>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  
+                  <div className="bg-white border border-slate-200 p-4 rounded-2xl flex items-center space-x-3 shadow-sm">
+                    <span className="text-2xl">🧼</span>
+                    <div>
+                      <h4 className="text-xs text-slate-500 font-semibold">Temizlik</h4>
+                      <p className="text-base font-extrabold text-slate-800">{targets.temizlik} dakika / gün</p>
+                    </div>
+                  </div>
+
+                  <div className="bg-white border border-slate-200 p-4 rounded-2xl flex items-center space-x-3 shadow-sm">
+                    <span className="text-2xl">🍳</span>
+                    <div>
+                      <h4 className="text-xs text-slate-500 font-semibold">Yemek</h4>
+                      <p className="text-base font-extrabold text-slate-800">{targets.yemek} dakika / gün</p>
+                    </div>
+                  </div>
+
+                  <div className="bg-white border border-slate-200 p-4 rounded-2xl flex items-center space-x-3 shadow-sm">
+                    <span className="text-2xl">🪡</span>
+                    <div>
+                      <h4 className="text-xs text-slate-500 font-semibold">Dikiş</h4>
+                      <p className="text-base font-extrabold text-slate-800">{targets.dikis} dakika / gün</p>
+                    </div>
+                  </div>
+
+                </div>
+
+                <div className="mt-6 flex flex-col sm:flex-row gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSetupCompleted(true);
+                      setActiveTab('bugun');
+                      triggerNotification("🎯 Yeni hedeflenen günlük süreleriniz başarıyla tanımlandı!");
+                    }}
+                    className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-2xl transition duration-150 text-center shadow-lg shadow-indigo-600/15"
+                  >
+                    Planı Onayla ve Başlat ✔️
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTargets({ temizlik: 30, yemek: 45, dikis: 20 });
+                      triggerNotification("🔄 Süreler varsayılan ayarlara geri döndürüldü.");
+                    }}
+                    className="py-3 px-6 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-2xl transition duration-150 text-center"
+                  >
+                    Sıfırla
+                  </button>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        )}
+
+      </main>
+
+      {/* Footer / Sayfa Altı */}
+      <footer className="bg-white border-t border-slate-200 mt-auto py-6">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row justify-between items-center gap-4 text-xs text-slate-500">
+          <div>
+            <p>© 2026 Denge Planner. Tüm Hakları Saklıdır.</p>
+          </div>
+          <div className="flex gap-4">
+            <span className="hover:underline cursor-pointer font-semibold" onClick={() => {
+              setSpentTime({ temizlik: 0, yemek: 0, dikis: 0 });
+              setTasks(INITIAL_TASKS);
+              triggerNotification("🔄 Tüm verileriniz başarıyla sıfırlandı!");
+            }}>Verileri Sıfırla</span>
+          </div>
+        </div>
+      </footer>
+    </div>
+      );
+    }
+
+    // React uygulamasını render etme
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
